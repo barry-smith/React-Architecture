@@ -1,278 +1,203 @@
-**In the architecture we're describing, features will usually represent commands/mutations, while entity queries represent reading state.** But I wouldn't make "feature = mutation" an absolute rule.
+I think **`widgets` was part of the architecture**, and it actually fills an important gap in the model I described above.
 
-The distinction I'd use is:
-
-> **Entities own facts about domain objects. Features own meaningful application actions.**
-
-That means a query can absolutely be a use case, but it doesn't automatically need to become a `feature`.
-
-### Simple example
-
-Suppose we have:
+The architecture was closer to:
 
 ```text
-entities/
-└── forecast/
-    ├── model/
-    │   └── Forecast.ts
-    └── queries/
-        ├── useForecast.ts
-        └── useForecasts.ts
+src/
+├── app/
+├── pages/
+├── widgets/
+├── features/
+├── entities/
+└── shared/
 ```
 
-These are straightforward:
+The key distinction was roughly:
 
-```ts
-useForecast(forecastId)
-useForecasts(projectId)
+```text
+entities  → domain things
+features  → things the user/application can do
+widgets   → substantial pieces of UI assembled from entities/features
+pages     → route/screen composition
+shared    → genuinely generic infrastructure/UI
 ```
 
-They're basically asking:
+### The important difference between `features` and `widgets`
 
-> "Give me Forecast data."
-
-There's little application behaviour involved. They're **entity queries**.
-
-Then:
+A **feature** represents a capability:
 
 ```text
 features/
-├── create-forecast/
-├── update-forecast/
-├── delete-forecast/
-└── assign-resource/
+└── update-forecast/
 ```
 
-These represent actions:
-
-> Create a Forecast.
-
-> Update a Forecast.
-
-> Delete a Forecast.
-
-> Assign a Resource.
-
-These are naturally mutation-oriented.
-
----
-
-## But consider a more interesting query
-
-Imagine the application has:
-
-> **Compare a forecast against its baseline**
-
-That's technically a read.
-
-There may be no mutation at all:
+It might provide:
 
 ```text
-GET /forecasts/{id}/comparison
+UpdateForecastButton
+UpdateForecastDialog
+useUpdateForecast
 ```
 
-But this isn't simply:
+A **widget** represents a larger, reusable piece of application UI that **composes multiple things**.
 
-> "Get Forecast."
-
-It's an actual **application capability**.
-
-The user is asking the system to perform a meaningful operation:
+For example:
 
 ```text
-Compare Forecast
-       ↓
-Forecast + Baseline
-       ↓
-Calculate differences
-       ↓
-Return comparison
-```
-
-I'd be quite comfortable modelling that as:
-
-```text
-features/
-└── compare-forecast/
-    ├── api/
-    ├── model/
-    ├── ui/
+widgets/
+└── forecast-grid/
+    ├── ForecastGrid.tsx
+    ├── ...
     └── index.ts
 ```
 
-even though it ultimately performs a GET.
-
-That's because **the feature boundary comes from the use case, not HTTP verb**.
-
----
-
-# A useful distinction
-
-I'd therefore separate these concepts:
-
-| Type                                               | Example                   | Likely location                         |
-| -------------------------------------------------- | ------------------------- | --------------------------------------- |
-| Retrieve an entity                                 | `useForecast(id)`         | `entities/forecast`                     |
-| List an entity                                     | `useForecasts(projectId)` | `entities/forecast`                     |
-| Create entity                                      | `createForecast()`        | `features/create-forecast`              |
-| Update entity                                      | `updateForecast()`        | `features/update-forecast`              |
-| Delete entity                                      | `deleteForecast()`        | `features/delete-forecast`              |
-| Perform meaningful domain operation                | `compareForecast()`       | `features/compare-forecast`             |
-| Retrieve a complex application-specific projection | `useForecastComparison()` | potentially `features/compare-forecast` |
-| Generic UI/data utility                            | `useDebounce()`           | `shared`                                |
-
-So the important distinction isn't:
-
-```text
-GET → entity
-POST → feature
-```
-
-It's:
-
-```text
-simple entity retrieval → entity
-
-application capability → feature
-```
-
----
-
-## This actually gives us a nice rule for the architecture
-
-I'd revise the earlier wording slightly.
-
-Instead of saying:
-
-> "Queries belong in entities and mutations belong in features."
-
-I'd say:
-
-> **Basic entity queries belong with their entity. Application-level use cases belong in features, regardless of whether they read or write data.**
-
-That is much more robust.
-
-### For example
-
-This:
-
-```text
-entities/forecast/queries/useForecast.ts
-```
-
-is sensible because the query is fundamentally about retrieving a Forecast.
-
-Whereas this:
-
-```text
-features/get-forecast-comparison/
-```
-
-could be sensible because "Forecast Comparison" is an application capability rather than simply another property of Forecast.
-
----
-
-# And I think there's another useful consequence
-
-We probably **shouldn't call every feature a "use case" in the strict sense**.
-
-There are two related concepts:
-
-### Entity operation
-
-```text
-Get Forecast
-Get Project
-Get Resources
-```
-
-These are essentially data access.
-
-### Application use case
-
-```text
-Create Forecast
-Update Forecast
-Assign Resource
-Compare Forecast
-Approve Forecast
-Publish Forecast
-```
-
-These describe something the application *does*.
-
-That's why your observation that **"there probably wouldn't ever be get use cases"** is mostly correct for the kind of application architecture we're designing.
-
-You don't need:
-
-```text
-features/
-└── get-forecast/
-```
-
-just because somebody can navigate to a Forecast page.
-
-You'd normally have:
+The Forecast Grid might consume:
 
 ```text
 entities/
-└── forecast/
-    └── queries/
-        └── useForecast.ts
+├── forecast
+├── project
+└── resource
+
+features/
+├── update-forecast
+├── assign-resource
+└── change-forecast-plan
 ```
 
-and the page consumes it.
+So conceptually:
+
+```text
+                    Forecast Page
+                         │
+                         ▼
+                  Forecast Grid
+                     WIDGET
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+      Forecast        Features       Resources
+       Entity        / Use Cases       Entity
+```
+
+That gives us a much better architectural hierarchy.
 
 ---
 
-## Where this gets particularly useful in your project
+## Widgets aren't just "big components"
 
-Think about your ForecastGrid.
+This distinction matters.
 
-The page might do:
-
-```text
-Forecast page
-    │
-    ├── useForecast(...)
-    │
-    ├── useForecastResources(...)
-    │
-    ├── Update Forecast feature
-    │
-    ├── Assign Resource feature
-    │
-    └── Change Forecast Plan feature
-```
-
-The reads establish **the state you're looking at**.
-
-The features establish **the things you can do with that state**.
-
-That's a very clean conceptual separation:
+You don't want:
 
 ```text
-             "What do we know?"
-                     │
-                     ▼
-                 ENTITIES
-                     │
-              queries / state
-                     │
-                     ▼
-             "What can we do?"
-                     │
-                     ▼
-                 FEATURES
-                     │
-             commands / actions
-                     │
-                     ▼
-                  UI
+widgets/
+├── Button
+├── Input
+├── Dialog
+└── ForecastGrid
 ```
 
-And importantly, **features can consume entity queries**.
+The first three are shared UI components.
 
-For example, `assign-resource` might need the current Forecast and available Resources, but it owns the *assignment operation*, not the underlying Resource/Forecast retrieval.
+A widget is something more substantial and **application-specific**.
 
-I think this is actually a stronger formulation of the architecture than the one I gave you initially, and I'd use **"entity queries vs application use cases"** as one of the core rules in the eventual LLM context.
+For example:
+
+```text
+widgets/
+├── forecast-grid/
+├── project-summary/
+├── resource-allocation-panel/
+└── forecast-overview/
+```
+
+These might combine:
+
+* entity data
+* feature UI
+* shared components
+* local presentation state
+* layout
+* orchestration
+
+but shouldn't generally contain the underlying business operation themselves.
+
+---
+
+## This gives us four useful levels
+
+I think this is the model we were getting toward:
+
+### 1. Entity — "What is it?"
+
+```text
+entities/forecast
+entities/project
+entities/resource
+```
+
+Owns the application's understanding of domain concepts.
+
+---
+
+### 2. Feature — "What can I do?"
+
+```text
+features/update-forecast
+features/assign-resource
+features/create-project
+features/change-forecast-plan
+```
+
+Owns a specific application capability/use case.
+
+---
+
+### 3. Widget — "What substantial thing do I see/use?"
+
+```text
+widgets/forecast-grid
+widgets/project-summary
+widgets/resource-allocation
+```
+
+Composes entities and features into meaningful pieces of application UI.
+
+---
+
+### 4. Page — "What screen/route am I on?"
+
+```text
+pages/forecast
+pages/project
+pages/dashboard
+```
+
+Composes widgets and perhaps individual features/entities into a route-level experience.
+
+---
+
+So the flow becomes:
+
+```text
+┌─────────────────────────────────────┐
+│                PAGE                 │
+│                                     │
+│   ┌─────────────────────────────┐   │
+│   │           WIDGET            │   │
+│   │                             │   │
+│   │   ┌─────────┐ ┌──────────┐  │   │
+│   │   │ ENTITY  │ │ FEATURE  │  │   │
+│   │   └─────────┘ └──────────┘  │   │
+│   │                             │   │
+│   └─────────────────────────────┘   │
+│                                     │
+└─────────────────────────────────────┘
+```
+
+And `shared` sits underneath all of them as generic infrastructure.
+
+This is also why **widgets are particularly useful for your AG Grid-heavy application**. Something like `ForecastGrid` is too application-specific to be `shared`, but it isn't really an entity or a use case either. `widgets` gives it a natural home.
+
+I think we should add **widgets** to the LLM context and then refine the boundaries between all four layers before we turn this into the final context document.
