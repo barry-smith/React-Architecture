@@ -1,4 +1,3 @@
-Yes. I think we should amend it.
 
 If we're **grouping features by domain**, I would also keep the **internal responsibility directories** inside each individual feature. Otherwise we end up with a structure that groups by domain but then dumps all the implementation concerns into the use-case folder.
 
