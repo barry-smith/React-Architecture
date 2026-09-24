@@ -1,471 +1,204 @@
-Not quite. The last response is a **strong architecture specification**, but if your goal is to give another LLM enough context to reliably work within this codebase, I would make it more comprehensive.
+Yes — with one important refinement: **widgets are application-level composition/shell components, not a dumping ground for page-specific components.**
 
-In particular, it captured the **rules**, but not quite enough of the **reasoning, examples, edge cases, and existing-code conventions** we've discussed. I'd want the final context to cover all of the following.
+I would define the boundary like this:
 
-### What I would add
+| Layer           | What it owns                                                          | Example                                                     |
+| --------------- | --------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `shared/ui`     | Generic, reusable UI with no business meaning                         | `Button`, `Dialog`, `Table`, `Tabs`                         |
+| `entities/*/ui` | Small UI directly representing an entity                              | `ClientStatusBadge`, `RowsPerPage`, `WorkspaceTypeSelect`   |
+| `features/*/ui` | UI that performs a specific capability/workflow                       | `RegisterForm`, `UpdateClientDialog`, `AssignResourceForm`  |
+| `widgets/*`     | Larger application-level compositions that assemble entities/features | `ForecastGrid`, `ProjectSummary`, `ResourceAllocationPanel` |
+| `routes/*`      | Route/page composition and routing concerns                           | `/projects/$projectId`, `/forecasts/$forecastId`            |
 
-1. **The complete architectural philosophy**
+### The key distinction
 
-   * Why the boundaries exist.
-   * Entity = noun, feature = verb, widget = substantial composition.
-   * Ownership matters more than the subject matter.
-   * Repeated names such as `entities/client` and `features/client` are intentional.
+A **widget isn't simply a "large component."**
 
-2. **The complete directory model**
-
-   * `routes`
-   * `widgets`
-   * `features`
-   * `entities`
-   * `shared`
-   * No traditional `pages` layer with TanStack Router.
-   * Examples of nested routes.
-   * Domain grouping within features.
-
-3. **The feature grouping question**
-
-   This is particularly important because we discussed it at length:
-
-   ```text
-   features/
-   ├── client/
-   │   ├── create/
-   │   ├── update/
-   │   └── delete/
-   ├── forecast/
-   │   ├── create/
-   │   ├── update/
-   │   └── compare/
-   └── resource/
-       └── assign/
-   ```
-
-   But also acknowledge that the existing project currently has things like:
-
-   ```text
-   features/register/
-   features/create-client/
-   ```
-
-   so the LLM **must not arbitrarily reorganise existing features**.
-
-4. **Every responsibility folder**
-
-   The final version should explicitly define:
-
-   ```text
-   api/
-   model/
-   queries/
-   search/
-   hooks/
-   ui/
-   ```
-
-   including the fact that **not every slice needs all of them**.
-
-5. **Every file suffix**
-
-   Including:
-
-   ```text
-   .api.ts
-   .dto.ts
-   .mapper.ts
-   .schema.ts
-   .types.ts
-   .constants.ts
-   .query.ts
-   .use-case.ts
-   .mutation.ts
-   use-*.ts
-   *.tsx
-   ```
-
-   And, importantly, explain why the suffix is there.
-
-6. **The distinction between a use case and a hook**
-
-   This should be very explicit:
-
-   ```text
-   React component
-        ↓
-   useXMutation()
-        ↓
-   x.use-case.ts
-        ↓
-   API/entity
-   ```
-
-   A `.use-case.ts` should not require React.
-
-7. **Queries vs use cases**
-
-   This was one of our major discussions and deserves its own section:
-
-   ```text
-   entities/client
-       ↓
-   useClientQuery()
-   ```
-
-   is fundamentally different from:
-
-   ```text
-   features/forecast/compare
-       ↓
-   compareForecastUseCase()
-   ```
-
-   even if both ultimately issue GET requests.
-
-8. **The important exception that features aren't necessarily mutations**
-
-   We should explicitly tell the LLM:
-
-   > Most features will be command/mutation-oriented, but "feature = mutation" is not an architectural rule.
-
-   A meaningful read-only application capability can be a feature.
-
-9. **Search architecture**
-
-   Your Client example gives us a very useful concrete pattern:
-
-   ```text
-   entities/client/search/
-   ├── client-search.schema.ts
-   └── use-client-search-actions.ts
-   ```
-
-   This needs to be documented properly, including:
-
-   * URL search params
-   * pagination
-   * sorting
-   * filters
-   * debouncing
-   * navigation
-   * `useTransition`
-   * why this belongs to the entity rather than Shared.
-
-10. **React Query architecture**
-
-    The final document should distinguish:
-
-    ```text
-    client.query.ts
-    ```
-
-    from:
-
-    ```text
-    use-client.query.ts
-    ```
-
-    i.e.:
-
-    ```text
-    query definition
-          ↓
-    React integration
-    ```
-
-11. **DTO/model/mapper relationships**
-
-    Including the fact that a DTO and model **do not have to differ**.
-
-    This is important because an LLM will otherwise invent pointless mappings.
-
-12. **Feature-specific schemas vs entity schemas**
-
-    Your Register example is excellent here:
-
-    ```text
-    registerSchema
-    ```
-
-    owns:
-
-    ```text
-    firstName
-    lastName
-    businessName
-    email
-    password
-    confirmPassword
-    ```
-
-    while:
-
-    ```text
-    workspaceTypeSchema
-    ```
-
-    belongs to the Workspace entity.
-
-    That's a very useful example of **composition rather than duplication**.
-
-13. **Feature → entity dependencies**
-
-    Explicit examples:
-
-    ```text
-    features/register
-        ↓
-    entities/auth
-    entities/workspace
-    ```
-
-    while avoiding:
-
-    ```text
-    entities/auth
-        ↓
-    features/register
-    ```
-
-14. **Entity UI vs Feature UI vs Widget UI**
-
-    This distinction should be extremely explicit.
-
-    ```text
-    entities/client/ui/
-        Client-specific small UI
-
-    features/register/ui/
-        Register workflow UI
-
-    widgets/client-list/
-        Larger application composition
-    ```
-
-15. **Import conventions**
-
-    This deserves more emphasis than it currently has:
-
-    Prefer:
-
-    ```ts
-    import { Client } from "@/entities/client";
-    import { useRegisterMutation } from "@/features/register";
-    ```
-
-    rather than:
-
-    ```ts
-    import { Client } from "@/entities";
-    import { useRegisterMutation } from "@/features";
-    ```
-
-    and avoid unnecessary deep imports across slice boundaries.
-
-16. **Public `index.ts` boundaries**
-
-    This should explicitly state that:
-
-    ```text
-    entities/client/index.ts
-    features/register/index.ts
-    widgets/foo/index.ts
-    ```
-
-    are public APIs for those slices.
-
-17. **No global barrels**
-
-    Explicitly discourage:
-
-    ```text
-    entities/index.ts
-    features/index.ts
-    widgets/index.ts
-    ```
-
-    because they hide ownership.
-
-18. **Anti-patterns**
-
-    I'd add a substantial section covering things the LLM should **not** do:
-
-    * Don't move everything concerning Client into `entities/client`.
-    * Don't move all API calls into entities.
-    * Don't create `get-client` features.
-    * Don't make entities depend on features.
-    * Don't put domain constants in Shared.
-    * Don't create generic `utils.ts`.
-    * Don't flatten slices.
-    * Don't create every possible directory.
-    * Don't create mappers with no transformation merely for ceremony.
-    * Don't refactor the whole architecture during a small feature change.
-    * Don't create an abstraction merely because two pieces of code look similar.
-
-19. **Existing code vs target architecture**
-
-    This is very important.
-
-    We should tell the LLM:
-
-    > The examples supplied are authoritative examples of the existing codebase. They are not necessarily all perfect architectural implementations. Preserve established patterns unless there is a concrete reason to change them.
-
-    This matters because of the current:
-
-    ```text
-    entities/client/api/client.api.ts
-        ↓
-    features/create-client
-    ```
-
-    dependency.
-
-    We shouldn't tell the LLM both:
-
-    > "Entities must never depend on features"
-
-    and:
-
-    > "Here is the existing Client API which does exactly that"
-
-    without explaining that distinction.
-
-20. **Minimal-churn principle**
-
-    Given how you actually work, I'd make this explicit:
-
-    > When implementing a change, make the smallest architectural change necessary. Do not reorganise neighbouring code simply because another structure could theoretically be cleaner.
-
-21. **Concrete complete examples**
-
-    I'd include two complete canonical examples:
-
-    **Client entity**
-
-    ```text
-    entities/client/
-    ├── api/
-    │   ├── client.api.ts
-    │   ├── client.dto.ts
-    │   └── client.mapper.ts
-    ├── model/
-    │   ├── client.constants.ts
-    │   ├── client.query.ts
-    │   └── client.types.ts
-    ├── queries/
-    │   └── use-client.query.ts
-    ├── search/
-    │   ├── client-search.schema.ts
-    │   └── use-client-search-actions.ts
-    └── ui/
-        └── client-rows-per-page.tsx
-    ```
-
-    and **Register feature**:
-
-    ```text
-    features/register/
-    ├── api/
-    │   ├── register.dto.ts
-    │   └── register.mapper.ts
-    ├── hooks/
-    │   └── register.mutation.ts
-    ├── model/
-    │   ├── register.schema.ts
-    │   └── register.use-case.ts
-    └── ui/
-        └── register-form.tsx
-    ```
-
-    Then explain every individual file.
-
----
-
-### There's also one thing I'd change in the previous document
-
-I would **not call the dependency model**:
-
-```text
-routes
- ↓
-widgets
- ↓
-features
- ↓
-entities
- ↓
-shared
-```
-
-too literally.
-
-That's useful as a mental model, but your actual code demonstrates that the relationships are more like:
-
-```text
-                    routes
-                   /      \
-                  ↓        ↓
-             widgets    features
-               ↓  ↘     ↙   ↓
-               ↓    entities
-               ↓       ↓
-               └────→ shared
-```
+It should represent a **meaningful piece of an application's interface that composes other architectural slices**.
 
 For example:
 
 ```text
-RegisterForm
-    ↓
-useRegisterMutation
-    ↓
-registerUseCase
-    ↓
-authApi
-    ↓
-entities/auth
+widgets/
+└── forecast-grid/
+    ├── ui/
+    │   └── ForecastGrid.tsx
+    └── index.ts
 ```
 
-and:
+`ForecastGrid` might compose:
 
 ```text
-RegisterForm
-    ↓
-entities/workspace
+Forecast entity
+Resource entity
+Update Forecast feature
+Assign Resource feature
+Change Plan feature
 ```
 
-So I would describe the architecture as **allowed dependency directions**, rather than a rigid hierarchy.
+The widget is responsible for putting those things together into the application's forecast grid experience.
+
+But it **doesn't own**:
+
+* updating a forecast
+* assigning a resource
+* the Forecast domain model
+* the API call
+* the mutation
+* the business rules
+
+Those belong to the lower-level slices.
 
 ---
 
-### And I think we're now at the point where we can make this genuinely authoritative
+### What I would *not* put in `widgets`
 
-The document above is already good enough to give an LLM useful architectural guidance, but **I wouldn't call it the final version yet**.
+Suppose you have:
 
-You've given me:
+```text
+features/
+└── update-client/
+    └── ui/
+        └── UpdateClientDialog.tsx
+```
 
-* the Client entity
-* the Register feature
+That's perfectly reasonable.
 
-Those two examples have already uncovered several conventions that weren't apparent from the abstract discussion.
+Even though `UpdateClientDialog` could be used on a client page, it's still **feature UI** because its purpose is:
 
-If you give me the remaining representative pieces you mentioned — particularly **the Workspace entity, Auth entity, and perhaps Create/Update/Delete Client features** — I can produce one final **"LLM Frontend Architecture Context"** that incorporates:
+> perform the Update Client capability.
 
-* the complete directory tree
-* exact naming conventions
-* exact file responsibilities
-* dependency rules
-* entity rules
-* feature rules
-* feature grouping
-* query/use-case distinction
-* search conventions
-* React Query conventions
-* DTO/mapper conventions
-* UI/widget boundaries
-* import/public API conventions
-* examples from your actual code
-* anti-patterns
-* "when adding new code" decision rules
-* existing-code-vs-preferred-architecture caveats
-* a compact set of explicit instructions at the end for the LLM to follow
+I wouldn't move it into:
 
-That would be the version I'd actually paste into a coding LLM's project context.
+```text
+widgets/
+└── update-client-dialog/
+```
+
+just because it's a reasonably substantial component.
+
+Likewise:
+
+```text
+features/
+└── register/
+    └── ui/
+        └── RegisterForm.tsx
+```
+
+is feature UI.
+
+It represents the **registration workflow**, not a generic application shell.
+
+---
+
+### What about page-specific components?
+
+This is where I think your assumption is particularly useful.
+
+With TanStack Router, I would **not create a generic `pages/` layer** and I wouldn't create widgets simply to avoid putting something in a route.
+
+For example:
+
+```text
+routes/
+└── _authenticated/
+    └── clients/
+        └── index.tsx
+```
+
+can compose:
+
+```tsx
+<ClientList />
+<ClientFilters />
+<ClientPagination />
+```
+
+If those are only meaningful to that particular route and don't constitute a substantial reusable application-level composition, they don't necessarily need to become widgets.
+
+You can have route-local composition where appropriate.
+
+The route can essentially be:
+
+```tsx
+export default function ClientsRoute() {
+    return (
+        <>
+            <PageHeader />
+            <ClientFilters />
+            <ClientList />
+        </>
+    );
+}
+```
+
+The important thing is not to create:
+
+```text
+widgets/
+└── clients-page/
+```
+
+merely because the route contains several components.
+
+That would make `widgets` become a disguised `pages` directory.
+
+---
+
+## I would therefore slightly tighten our definition
+
+Instead of saying:
+
+> "`widgets/` = substantial application-specific UI compositions"
+
+I'd put this in the architecture document:
+
+> **Widgets are application-level UI compositions that represent a substantial, meaningful part of the application's interface and compose entities and/or features into a cohesive experience. They are not generic UI components, individual feature components, or a replacement for pages/routes.**
+>
+> **Widgets should normally be used when a composition has its own meaningful application-level identity and may be reused across routes or represents a substantial reusable section of the application.**
+>
+> **Do not create a widget solely because a component is large, because a page contains multiple components, or because something needs somewhere to live. Route-specific UI can remain composed directly within the route when it has no meaningful widget-level boundary.**
+
+And I'd add a very explicit rule:
+
+> **A widget composes capabilities; it does not own capabilities.**
+
+So:
+
+```text
+ForecastGrid
+    ├── uses Forecast entity
+    ├── uses Resource entity
+    ├── uses Update Forecast feature
+    └── uses Assign Resource feature
+```
+
+rather than:
+
+```text
+ForecastGrid
+    ├── contains forecast mutation logic
+    ├── contains resource assignment logic
+    └── contains forecast business rules
+```
+
+That distinction is important enough that I'd include it in the final LLM context.
+
+### One further nuance: "shell"
+
+I **wouldn't define widgets as mostly/all shell components**, because "shell" can imply things like:
+
+```text
+AppShell
+Sidebar
+Header
+Navigation
+WorkspaceLayout
+```
+
+Those are often **app/layout concerns**, and may belong in `app/`, `shared/`, or route/layout composition depending on their responsibilities.
+
+I'd use **"application-level composition"** rather than **"shell"**.
+
+So your intuition is right that widgets should sit *above* feature-specific components, but I wouldn't limit them to visual shells. A `ForecastGrid` or `ProjectSummary` can absolutely be a widget even though it is specific to a particular application domain.
